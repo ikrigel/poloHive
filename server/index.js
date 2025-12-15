@@ -44,6 +44,96 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
+// --- Advanced scrape job queue ---
+const userAgents = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/117.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/16.1 Safari/605.1.15',
+  'poloHive-bot/1.0 (+https://example.com)'
+];
+
+const jobs = {}; // jobId -> { status, result, startedAt, finishedAt }
+const queue = [];
+let active = 0;
+const MAX_CONCURRENT = parseInt(process.env.SCRAPE_CONCURRENCY || '3');
+
+function nextJob(){
+  if (active >= MAX_CONCURRENT) return;
+  const item = queue.shift();
+  if (!item) return;
+  active++;
+  processJob(item).finally(() => { active--; setImmediate(nextJob); });
+}
+
+async function processJob({ jobId, url, maxDepth = 0, maxPages = 20, retries = 2 }){
+  jobs[jobId].status = 'running';
+  jobs[jobId].startedAt = new Date().toISOString();
+  const seen = new Set();
+  const emails = new Set();
+  const toVisit = [url];
+
+  while(toVisit.length && seen.size < maxPages){
+    const u = toVisit.shift();
+    if (!u) continue;
+    if (seen.has(u)) continue;
+    seen.add(u);
+    let attempt = 0;
+    let success = false;
+    while(attempt <= retries && !success){
+      try{
+        const ua = userAgents[Math.floor(Math.random()*userAgents.length)];
+        const resp = await axios.get(u, { timeout: 15000, headers: { 'User-Agent': ua } });
+        const $ = cheerio.load(resp.data);
+        const text = $('body').text();
+        (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).forEach(e => emails.add(e));
+        // if depth > 0, collect same-origin links
+        if (maxDepth > 0){
+          const base = new URL(u);
+          $('a[href]').each((i, a) => {
+            try{
+              const href = $(a).attr('href');
+              if (!href) return;
+              const full = new URL(href, base).toString();
+              if (new URL(full).host === base.host && !seen.has(full) && toVisit.length + seen.size < maxPages) toVisit.push(full);
+            }catch(e){ }
+          });
+        }
+        success = true;
+      }catch(err){
+        attempt++;
+        if (attempt > retries) console.error('job fetch failed', u, err.message || err);
+      }
+    }
+  }
+
+  const result = { emails: Array.from(emails), source: url };
+  jobs[jobId].result = result;
+  jobs[jobId].status = 'finished';
+  jobs[jobId].finishedAt = new Date().toISOString();
+
+  // store to Airtable if available
+  if (airtableBase && result.emails.length){
+    const table = airtableBase(process.env.AIRTABLE_TABLE_NAME || 'Emails');
+    const records = result.emails.slice(0,100).map(e => ({ fields: { Email: e, Source: url, ScrapedAt: new Date().toISOString() } }));
+    table.create(records, (err) => { if (err) console.error('Airtable create error', err); });
+  }
+}
+
+app.post('/api/scrape/start', (req, res) => {
+  const { url, maxDepth = 0, maxPages = 20 } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const jobId = `job_${Date.now()}_${Math.floor(Math.random()*10000)}`;
+  jobs[jobId] = { status: 'queued', createdAt: new Date().toISOString(), params: { url, maxDepth, maxPages } };
+  queue.push({ jobId, url, maxDepth, maxPages });
+  setImmediate(nextJob);
+  res.json({ jobId });
+});
+
+app.get('/api/scrape/status/:id', (req, res) => {
+  const j = jobs[req.params.id];
+  if (!j) return res.status(404).json({ error: 'job not found' });
+  res.json(j);
+});
+
 app.post('/api/send-email', async (req, res) => {
   const { to, subject, text, html, attachments } = req.body;
   if (!to) return res.status(400).json({ error: 'to required' });
