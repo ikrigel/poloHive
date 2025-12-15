@@ -3,6 +3,7 @@ import { BrowserModule } from '@angular/platform-browser';
 import { HttpClientModule } from '@angular/common/http';
 import { RouterModule, Routes } from '@angular/router';
 import { StoreModule } from '@ngrx/store';
+import { FormsModule } from '@angular/forms';
 
 import { AppComponent } from './app.component';
 import { NavbarComponent } from './components/navbar/navbar.component';
@@ -15,7 +16,7 @@ const routes: Routes = [
 
 @NgModule({
   declarations: [AppComponent, NavbarComponent, LoginComponent],
-  imports: [BrowserModule, HttpClientModule, RouterModule.forRoot(routes), StoreModule.forRoot({})],
+  imports: [BrowserModule, HttpClientModule, FormsModule, RouterModule.forRoot(routes), StoreModule.forRoot({})],
   providers: [],
   bootstrap: [AppComponent]
 })
