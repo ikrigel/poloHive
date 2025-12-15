@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { environment } from '../../environments/environment';
+import { SupabaseService } from './supabase.service';
 
 export interface UserState { id: string; email?: string; role?: string; }
 
@@ -10,18 +11,26 @@ export class AuthService {
   private supabase: SupabaseClient;
   public currentUser: UserState | null = null;
 
-  constructor(private http: HttpClient){
+  constructor(private http: HttpClient, private sb: SupabaseService){
     this.supabase = createClient(environment.SUPABASE_URL, environment.SUPABASE_ANON_KEY);
   }
 
   async register(email: string, password: string){
-    return this.supabase.auth.signUp({ email, password });
+    const resp = await this.supabase.auth.signUp({ email, password });
+    const user = resp.data?.user;
+    if (user) {
+      const profile = await this.sb.ensureProfile(user.id, user.email || undefined);
+      this.currentUser = { id: user.id, email: user.email || undefined, role: profile?.role || 'user' };
+    }
+    return resp;
   }
 
   async login(email: string, password: string){
     const resp = await this.supabase.auth.signInWithPassword({ email, password });
-    if (resp && resp.data?.user) {
-      this.currentUser = { id: resp.data.user.id, email: resp.data.user.email || undefined, role: 'user' };
+    const user = resp.data?.user;
+    if (user) {
+      const profile = await this.sb.ensureProfile(user.id, user.email || undefined);
+      this.currentUser = { id: user.id, email: user.email || undefined, role: profile?.role || 'user' };
     }
     return resp;
   }
@@ -50,7 +59,7 @@ export class AuthService {
   }
 
   isAdmin(email?: string){
-    const e = email || this.currentUser?.email;
-    return Boolean(e && e.toLowerCase() === 'ikrigel@gmail.com');
+    const e = (email || this.currentUser?.email || '').toLowerCase();
+    return Boolean(e && e === 'ikrigel@gmail.com');
   }
 }
