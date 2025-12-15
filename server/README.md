@@ -24,6 +24,12 @@ New endpoints
 - `POST /api/scrape/start` — start a scrape job, body: `{ url, maxDepth?, maxPages? }`. Returns `{ jobId }`.
 - `GET /api/scrape/status/:id` — get job status and results.
 
+Proxy, robots, rate-limiting
+- You can configure rotating proxies via the `PROXIES` environment variable (comma-separated list):
+	`PROXIES=http://proxy1:3128,http://proxy2:3128`
+- The scraper checks `robots.txt` for each host and will skip URLs disallowed for `poloHive-bot` (or `*`).
+- Per-host minimum delay can be set via `SCRAPE_MIN_DELAY_MS` (default `1000`).
+
 Notes on scraping
 - The server now contains a simple job queue with configurable concurrency via `SCRAPE_CONCURRENCY` env var. It performs retries, rotates user-agents, and optionally crawls same-origin links up to `maxDepth`.
 - For production-scale scraping, integrate your `dexhiveScrap` project for better parsing, headless browsing, proxy support, and obey `robots.txt`.
