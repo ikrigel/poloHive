@@ -252,3 +252,72 @@ app.patch('/api/airtable/records/:id', async (req, res) => {
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => console.log(`poloHive server listening on ${port}`));
+
+// DexHive-style Puppeteer scraper endpoint
+const puppeteer = require('puppeteer');
+
+app.post('/api/scrape/dexhive', async (req, res) => {
+  const { baseUrl, startPage = 1, endPage = 1 } = req.body;
+  if (!baseUrl) return res.status(400).json({ error: 'baseUrl required' });
+
+  try {
+    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    await page.goto(baseUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    const allData = [];
+    let headers = [];
+
+    for (let pageNum = startPage; pageNum <= endPage; pageNum++){
+      try{
+        if (pageNum > startPage){
+          await page.evaluate((num) => { window.location.hash = `page=${num}`; }, pageNum);
+          await new Promise(r => setTimeout(r, 3500));
+          await page.waitForSelector('table', { timeout: 30000 });
+        }
+
+        const htmlContent = await page.content();
+        const $ = cheerio.load(htmlContent);
+
+        $('table.shrink').each((_, table) => {
+          const entryData = {};
+          let hasData = false;
+          $(table).find('tbody tr').each((_, row) => {
+            const cells = $(row).find('td');
+            if (cells.length === 2){
+              const fieldLabel = $(cells[0]).find('div').first().text().trim();
+              const fieldValue = $(cells[1]).text().trim();
+              if (fieldLabel && fieldValue){
+                entryData[fieldLabel] = fieldValue;
+                hasData = true;
+                if (!headers.includes(fieldLabel)) headers.push(fieldLabel);
+              }
+            }
+          });
+          if (hasData) allData.push(entryData);
+        });
+
+        // polite delay
+        await new Promise(r => setTimeout(r, 1000));
+      } catch (err) {
+        console.error('dexhive page error', pageNum, err.message || err);
+      }
+    }
+
+    await browser.close();
+
+    // store rows to Airtable if configured
+    if (airtableBase && allData.length){
+      const table = airtableBase(process.env.AIRTABLE_TABLE_NAME || 'Emails');
+      const records = allData.slice(0,200).map(row => ({ fields: { JSON: JSON.stringify(row), ScrapedAt: new Date().toISOString() } }));
+      table.create(records, (err) => { if (err) console.error('Airtable create error', err); });
+    }
+
+    res.json({ rows: allData, headers });
+  } catch (err) {
+    console.error('dexhive scrape failed', err);
+    res.status(500).json({ error: 'scrape failed', details: err.message || String(err) });
+  }
+});
