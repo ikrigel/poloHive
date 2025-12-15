@@ -125,5 +125,40 @@ app.post('/api/ai/analyze', async (req, res) => {
   res.json({ intent, summary: text.slice(0,200) });
 });
 
+// Airtable proxy endpoints
+app.get('/api/airtable/records', async (req, res) => {
+  if (!airtableBase) return res.status(500).json({ error: 'Airtable not configured' });
+  try {
+    const table = airtableBase(process.env.AIRTABLE_TABLE_NAME || 'Emails');
+    const all = [];
+    table.select({ pageSize: 100 }).eachPage((records, fetchNextPage) => {
+      records.forEach(r => all.push({ id: r.id, fields: r.fields }));
+      fetchNextPage();
+    }, (err) => {
+      if (err) { console.error(err); return res.status(500).json({ error: 'fetch failed' }); }
+      res.json({ records: all });
+    });
+  } catch (err) {
+    console.error('airtable fetch error', err);
+    res.status(500).json({ error: 'airtable fetch failed' });
+  }
+});
+
+app.patch('/api/airtable/records/:id', async (req, res) => {
+  if (!airtableBase) return res.status(500).json({ error: 'Airtable not configured' });
+  const { id } = req.params;
+  const fields = req.body.fields || {};
+  try {
+    const table = airtableBase(process.env.AIRTABLE_TABLE_NAME || 'Emails');
+    table.update([{ id, fields }], (err, records) => {
+      if (err) { console.error(err); return res.status(500).json({ error: 'update failed' }); }
+      res.json({ records: records.map(r => ({ id: r.id, fields: r.fields })) });
+    });
+  } catch (err) {
+    console.error('airtable update error', err);
+    res.status(500).json({ error: 'airtable update failed' });
+  }
+});
+
 const port = process.env.PORT || 4000;
 app.listen(port, () => console.log(`poloHive server listening on ${port}`));

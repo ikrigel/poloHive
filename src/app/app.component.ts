@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { AirtableSyncService } from './services/airtable-sync.service';
 
 @Component({
   selector: 'app-root',
@@ -12,3 +13,6 @@ import { Component } from '@angular/core';
   styles: [`.container{padding:16px}`]
 })
 export class AppComponent { }
+
+// start airtable sync when app boots
+export function startSync(sync: AirtableSyncService){ return () => sync.start(); }

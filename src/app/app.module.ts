@@ -3,6 +3,7 @@ import { BrowserModule } from '@angular/platform-browser';
 import { HttpClientModule } from '@angular/common/http';
 import { RouterModule, Routes } from '@angular/router';
 import { StoreModule } from '@ngrx/store';
+import { emailsReducer } from './store/email.reducer';
 import { FormsModule } from '@angular/forms';
 
 import { AppComponent } from './app.component';
@@ -10,6 +11,9 @@ import { NavbarComponent } from './components/navbar/navbar.component';
 import { LoginComponent } from './components/login/login.component';
 import { SettingsComponent } from './components/settings/settings.component';
 import { LogsComponent } from './components/logs/logs.component';
+import { AirtableSyncService } from './services/airtable-sync.service';
+import { APP_INITIALIZER } from '@angular/core';
+import { startSync } from './app.component';
 
 const routes: Routes = [
   { path: '', component: AppComponent },
@@ -20,8 +24,8 @@ const routes: Routes = [
 
 @NgModule({
   declarations: [AppComponent, NavbarComponent, LoginComponent, SettingsComponent, LogsComponent],
-  imports: [BrowserModule, HttpClientModule, FormsModule, RouterModule.forRoot(routes), StoreModule.forRoot({})],
-  providers: [],
+  imports: [BrowserModule, HttpClientModule, FormsModule, RouterModule.forRoot(routes), StoreModule.forRoot({ emails: emailsReducer })],
+  providers: [AirtableSyncService, { provide: APP_INITIALIZER, useFactory: startSync, deps: [AirtableSyncService], multi: true }],
   bootstrap: [AppComponent]
 })
 export class AppModule { }
